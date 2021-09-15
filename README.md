@@ -1,5 +1,5 @@
 # mclibs
-Single-file C utility libraries for game development, by Miguel A. Friginal (Mystery Coconut, LLC.)
+Single-file C utility libraries for game development, by Miguel A. Friginal ([Mystery Coconut, LLC.](https://mysterycoconut.com/))
 
 | library | latest verstion | description |
 | :------ | :-------------: | :---------- |
