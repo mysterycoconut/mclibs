@@ -23,6 +23,9 @@
 //      https://youtu.be/e4b--cyXEsM
 //      https://twicetwo.com/files/generate-hash-notes.md
 //
+//   Efficiently Generating a Number in a Range by Melissa E. O'Neill
+//      https://www.pcg-random.org/posts/bounded-rands.html
+//
 //   Tricks With the Floating-Point Format by Bruce Dawson
 //      https://randomascii.wordpress.com/2012/01/11/tricks-with-the-floating-point-format/
 //
