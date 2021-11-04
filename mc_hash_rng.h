@@ -417,29 +417,29 @@ MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint( MCHR_INT posX, MCHR_INT posY, MCHR_INT
 // Unsigned integer in range (closed range, including both limits).
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_UINT mchr_get_hash_uint_in_range( const void* index_buffer, size_t len, MCHR_UINT seed, MCHR_UINT min, MCHR_UINT max ) {
-    assert(min < max);
+    assert(min <= max);
     return mchr_get_hash_uint_under_limit(index_buffer, len, seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_UINT mchr_get_1d_hash_uint_in_range( MCHR_INT pos, MCHR_UINT seed, MCHR_UINT min, MCHR_UINT max ) {
-    assert(min < max);
+    assert(min <= max);
     return mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_UINT mchr_get_2d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed, MCHR_UINT min, MCHR_UINT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_UINT mchr_get_3d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed, MCHR_UINT min, MCHR_UINT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed, MCHR_UINT min, MCHR_UINT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ, posT };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
@@ -448,29 +448,29 @@ MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY,
 // Integer in range (closed range, including both limits).
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_INT mchr_get_hash_int_in_range( const void* index_buffer, size_t len, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
-    assert(min < max);
+    assert(min <= max);
     return mchr_get_hash_uint_under_limit(index_buffer, len, seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_1d_hash_int_in_range( MCHR_INT pos, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
-    assert(min < max);
+    assert(min <= max);
     return mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_2d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_3d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_4d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
-    assert(min < max);
+    assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ, posT };
     return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
 }
