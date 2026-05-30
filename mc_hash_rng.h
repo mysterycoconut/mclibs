@@ -1,4 +1,4 @@
-// mc_hash_rng.h - v0.5 - public domain, initial release 2021-09-15 - Miguel A. Friginal
+// mc_hash_rng.h - v0.6 - public domain, initial release 2021-09-15 - Miguel A. Friginal
 //
 // A hash-based pseudo-random number generator.
 //
@@ -42,6 +42,19 @@
 //
 // History:
 //
+//      0.6 (2026-05-29) Bug fixes and cleanup:
+//         - neg_one_to_one now returns a properly closed [-1,1], derived from zero_to_one
+//           (2*z - 1): both endpoints reachable, exactly equidistant, and computed
+//           entirely in float.
+//         - chance now draws from a half-open [0,1) value, so a probability of 1.0 is
+//           always true and 0.0 always false (rate is unbiased).
+//         - int_in_range computes its span in unsigned arithmetic to avoid
+//           signed-overflow UB on ranges wider than INT_MAX.
+//         - float helpers simplified ((float)num / max_range); removed a dead mask and
+//           the pass-through temporaries.
+//         - documentation fixes: float spacing (1/2^24 and 1/2^23), the usage example,
+//           and 'HEADER' / 'hash function' typos.
+//
 //      0.5 (2021-09-15) First released version.
 //
 //
@@ -68,38 +81,40 @@
 //   All functions require passing an unsigned int seed, and some data to be hashed. The
 //   data can be passed as a pointer to a 32-bit aligned block of memory and its size:
 //
-//          float data[] = { ... };
-//          unsigned int seed = 0;
-//          unsigned int random_value = mchr_get_hash_uint(data, sizeof(data), seed);
+//         float data[] = { ... };
+//         unsigned int seed = 0;
+//         unsigned int random_value = mchr_get_hash_uint(data, sizeof(data), seed);
 //
-//   or directly as up to 4 integer parameters through helper functions (look for 1d, 2d,
+//   Or directly as up to 4 integer parameters through helper functions (look for 1d, 2d,
 //   3d, or 4d as part of the function name):
 //
-//          int data1 = 130; int data2 = 23;
-//          unsigned int seed = 0;
-//          unsigned int random_value = mchr_get_2d_hash_uint(data1, data2, seed)
+//         int data1 = 130; int data2 = 23;
+//         unsigned int seed = 0;
+//         unsigned int random_value = mchr_get_2d_hash_uint(data1, data2, seed)
 //
 //   Use the range functions to obtain numbers without modulo bias, e.g. don't do this:
 //
-//          int zero_to_nine_with_bias = mchr_get_1d_hash_int(data1, seed) % 10;
+//         int zero_to_nine_with_bias = mchr_get_1d_hash_uint(data1, seed) % 10;
 //
-//   do this instead:
+//   Do this instead:
 //
-//          int zero_to_nine_no_bias = mchr_get_1d_hash_int_in_range(data1, seed, 0, 9);
+//         int zero_to_nine_no_bias = mchr_get_1d_hash_int_in_range(data1, seed, 0, 9);
 //
 //   Notice most range functions use closed ranges (including both minimum and maximum).
 //
 //   Apart from functions returning integer types, there are helper functions that return
-//   floats between 0 and 1 or between -1 and 1 (inclusive). Adjacent floats returned by
-//   these functions will always be 1.0 / 2^23 apart, offering an even distribution
-//   (usually there are more discrete values between 0 and 0.5 than between 0.5 to 1).
+//   floats between 0 and 1 or between -1 and 1 (inclusive, closed ranges). The 
+//   zero-to-one functions return equidistant floats 1.0 / 2^24 apart; the neg-one-to-one 
+//   functions span twice the width, so they return equidistant floats 1.0 / 2^23 apart. 
+//   The even spacing matters since normally there are more representable floats between 
+//   0.0 and 0.5 than between 0.5 and 1.0; these helpers avoid that imbalance.
 //
-//          float zero_to_one = mchr_get_3d_hash_zero_to_one(data1, data2, data3, seed);
+//         float zero_to_one = mchr_get_3d_hash_zero_to_one(data1, data2, data3, seed);
 //
 //   There are also helper functions that return true if a hash value generated between
 //   0.0 and 1.0 is less than a certain probability:
 //
-//          if (mchr_get_1d_chance(data1, seed, 0.5)) // 50% probability
+//         if (mchr_get_1d_chance(data1, seed, 0.5)) // 50% probability
 //
 //
 // More about seeds and data indices/positions:
@@ -107,41 +122,41 @@
 //   Both the seed and at least one data index are necessary for the hash function to
 //   return a value. In practice this can be used...
 //
-//     1) To make random calls independent of the calling order. Where with a standard
-//        random function you would do:
+//      1) To make random calls independent of the calling order. Where with a standard
+//         random function you would do:
 //
-//              srand(seed);
-//              int num0 = rand() % limit;
-//              int num1 = rand() % limit;
-//              int num2 = rand() % limit;
-//              ...
-//              int num51 = rand() % limit;
+//               srand(seed);
+//               int num0 = rand() % limit;
+//               int num1 = rand() % limit;
+//               int num2 = rand() % limit;
+//               ...
+//               int num51 = rand() % limit;
 //
-//        with this library you could do:
+//         With this library you could do:
 //
-//              int num0 = mchr_get_1d_hash_int_in_range(0, seed, 0, limit - 1);
-//              int num51 = mchr_get_1d_hash_int_in_range(51, seed, 0, limit - 1);
-//              int num1 = mchr_get_1d_hash_int_in_range(1, seed, 0, limit - 1);
+//               int num0 = mchr_get_1d_hash_int_in_range(0, seed, 0, limit - 1);
+//               int num51 = mchr_get_1d_hash_int_in_range(51, seed, 0, limit - 1);
+//               int num1 = mchr_get_1d_hash_int_in_range(1, seed, 0, limit - 1);
 //
-//        Making the seed and position explicit in the call makes it independent of the
-//        order in which the function is called.
+//         Making the seed and position explicit in the call makes it independent of the
+//         order in which the function is called.
 //
-//     2) To use any kind of data as part of the repeatable seed for the pseudo-random
-//        number generator. E.g.:
+//      2) To use any kind of data as part of the repeatable seed for the pseudo-random
+//         number generator. E.g.:
 //
-//              typedef struct tree_data_t {
-//                  float position[3];
-//                  enum tree_type type;
-//              } tree_data_t;
-//
-//              tree_data_t data = {
-//                  .position = {-10.5, -0.16, 32.5},
-//                  .type = K_TREE_TYPE_OAK
-//              };
-//              const unsigned int seed_for_tree_heights = 234234;
-//
-//              float tree_height = mchr_get_hash_zero_to_one(&data, sizeof(tree_data_t),
-//                                                            seed_for_tree_heights);
+//               typedef struct tree_data_t {
+//                   float position[3];
+//                   enum tree_type type;
+//               } tree_data_t;
+// 
+//               tree_data_t data = {
+//                   .position = {-10.5, -0.16, 32.5},
+//                   .type = K_TREE_TYPE_OAK
+//               };
+//               const unsigned int seed_for_tree_heights = 234234;
+// 
+//               float tree_height = mchr_get_hash_zero_to_one(&data, sizeof(tree_data_t),
+//                                                             seed_for_tree_heights);
 //
 //
 // Thread-safety:
@@ -249,7 +264,7 @@ MCHR_DEF bool mchr_get_4d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, M
 }
 #endif
 
-// END OF HEDER FILE ---------------------------------------------------------------------
+// END OF HEADER FILE --------------------------------------------------------------------
 #endif // MCHR_INCLUDE_MC_HASH_RNG_H
 
 
@@ -289,8 +304,8 @@ static const MCHR_UINT MCHR_BIT_NOISE2 = 0xB5297A4DU;   // 0b1011 0101 0010 1001
 static const MCHR_UINT MCHR_BIT_NOISE3 = 0x1B56C4E9U;   // 0b0001 1011 0101 0110 1100 0100 1110 1001
 
 // ---------------------------------------------------------------------------------------
-// This is the main hash table implementation. Currently using a modified Squirrel3 hash
-//  (by Squirrel Eiserloh, see https://www.youtube.com/watch?v=LWFzPP8ZbdU) that works on
+// This is the main hash function implementation. Currently using a modified Squirrel3 
+//  hash (by Squirrel Eiserloh, https://www.youtube.com/watch?v=LWFzPP8ZbdU) that works on
 //  any data length, and doesn't return the same value for a zero index at all lengths.
 // index_buffer needs to point to a block of memory with a length that is a multiple of
 //  4 bytes (sizeof(uint32_t)).
@@ -361,33 +376,30 @@ MCHR_DEF MCHR_UINT mchr_get_hash_uint_under_limit(const void* index_buffer, size
 }
 
 // ---------------------------------------------------------------------------------------
-// Private function to convert an unsigned integer in the range 0 to 2^24 into a float
-//  from zero to 1 that is evenly distributed (with as many numbers in the interval from
-//  0.0 to 0.5 than in the interval from 0.5 to 1.0; normally 0.0 to 0.5 has float the
-//  precision than 0.5 to 1.0).
+// Private function to convert an unsigned integer in [0, 2^24] into a float in the closed
+//  [0,1] range, evenly distributed: equally many outputs land in [0.0, 0.5] as in
+//  [0.5, 1.0] (a raw float grid is denser toward 0, so that even split is not automatic).
 // ---------------------------------------------------------------------------------------
 static float mchr_priv_uint_to_zero_one(MCHR_UINT num) {
     const MCHR_UINT max_range = 1 << 24;
     assert(num <= max_range);
     if (num >= max_range)
-        return 1.0;
-    num &= (max_range - 1);
-    float result = num * 1.0f / max_range;
-    return result;
+        return 1.0f;
+    return (float)num / max_range;
 }
 
 // ---------------------------------------------------------------------------------------
-// Private function to convert an unsigned integer in the range 0 to 2^25-1 into a float
-//  from -1.0 to 1.0 that is evenly distributed (with as many numbers in the interval from
-//  0.0 to 0.5 than in the interval from 0.5 to 1.0, both in positive and negative
-//  directions).
+// Private function to convert an unsigned integer in the range [0, 2^24) into a float in
+//  the left-closed [0,1) range (1.0 excluded). Used by the chance functions, whose
+//  "less than probability" test needs 1.0 to be unreachable so that a probability of 1.0
+//  is always true and a probability of 0.0 is always false (and the true-probability 
+//  stays unbiased).
 // ---------------------------------------------------------------------------------------
-static float mchr_priv_uint_to_neg_one_one(MCHR_UINT num) {
-    const MCHR_UINT max_range = 1 << 25;
+static float mchr_priv_uint_to_zero_one_excl(MCHR_UINT num) {
+    const MCHR_UINT max_range = 1 << 24;
     assert(num < max_range);
     num &= (max_range - 1);
-    float result = num * 1.0f / max_range;
-    return result * 2.0 - 1.0;
+    return (float)num / max_range;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -449,120 +461,130 @@ MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY,
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_INT mchr_get_hash_int_in_range( const void* index_buffer, size_t len, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
-    return mchr_get_hash_uint_under_limit(index_buffer, len, seed, max - min + 1) + min;
+    return mchr_get_hash_uint_under_limit(index_buffer, len, seed, (MCHR_UINT)max - (MCHR_UINT)min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_1d_hash_int_in_range( MCHR_INT pos, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
-    return mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, max - min + 1) + min;
+    return mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, (MCHR_UINT)max - (MCHR_UINT)min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_2d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
     MCHR_INT array[] = { posX, posY };
-    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
+    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (MCHR_UINT)max - (MCHR_UINT)min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_3d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ };
-    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
+    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (MCHR_UINT)max - (MCHR_UINT)min + 1) + min;
 }
 
 MCHR_DEF MCHR_INT mchr_get_4d_hash_int_in_range( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
     MCHR_INT array[] = { posX, posY, posZ, posT };
-    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, max - min + 1) + min;
+    return mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (MCHR_UINT)max - (MCHR_UINT)min + 1) + min;
 }
 
 // ---------------------------------------------------------------------------------------
 // Float from 0.0 to 1.0 (closed range, including both limits).
 // ---------------------------------------------------------------------------------------
 MCHR_DEF float mchr_get_hash_zero_to_one( const void* index_buffer, size_t len, MCHR_UINT seed ) {
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(index_buffer, len, seed, (1 << 24) + 1);
-    return mchr_priv_uint_to_zero_one(result);
+    return mchr_priv_uint_to_zero_one(
+        mchr_get_hash_uint_under_limit(index_buffer, len, seed, (1 << 24) + 1)
+    );
 }
 
 MCHR_DEF float mchr_get_1d_hash_zero_to_one( MCHR_INT pos, MCHR_UINT seed ) {
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, (1 << 24) + 1);
-    return mchr_priv_uint_to_zero_one(result);
+    return mchr_priv_uint_to_zero_one(
+        mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, (1 << 24) + 1)
+    );
 }
 
 MCHR_DEF float mchr_get_2d_hash_zero_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed ) {
     MCHR_INT array[] = { posX, posY };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1);
-    return mchr_priv_uint_to_zero_one(result);
+    return mchr_priv_uint_to_zero_one(
+        mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1)
+    );
 }
 
 MCHR_DEF float mchr_get_3d_hash_zero_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed ) {
     MCHR_INT array[] = { posX, posY, posZ };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1);
-    return mchr_priv_uint_to_zero_one(result);
+    return mchr_priv_uint_to_zero_one(
+        mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1)
+    );
 }
 
 MCHR_DEF float mchr_get_4d_hash_zero_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed ) {
     MCHR_INT array[] = { posX, posY, posZ, posT };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1);
-    return mchr_priv_uint_to_zero_one(result);
+    return mchr_priv_uint_to_zero_one(
+        mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 24) + 1)
+    );
 }
 
 // ---------------------------------------------------------------------------------------
-// Return true if a [0,1] range random result is under probability_of_true.
+// Return true if a left-closed [0,1) range random result is under probability_of_true.
+// The [0,1) source (1.0 excluded) is deliberate: it makes a probability of 1.0 always
+//  true and a probability of 0.0 always false, and keeps the true-probability unbiased.
 // ---------------------------------------------------------------------------------------
 MCHR_DEF bool mchr_get_chance( const void* index_buffer, size_t len, MCHR_UINT seed, float probability_of_true ) {
     assert((0.0 <= probability_of_true) && (probability_of_true <= 1.0));
-    return mchr_get_hash_zero_to_one(index_buffer, len, seed) < probability_of_true;
+    MCHR_UINT result = mchr_get_hash_uint_under_limit(index_buffer, len, seed, 1 << 24);
+    return mchr_priv_uint_to_zero_one_excl(result) < probability_of_true;
 }
 
 MCHR_DEF bool mchr_get_1d_chance( MCHR_INT pos, MCHR_UINT seed, float probability_of_true ) {
     assert((0.0 <= probability_of_true) && (probability_of_true <= 1.0));
-    return mchr_get_1d_hash_zero_to_one(pos, seed) < probability_of_true;
+    MCHR_UINT result = mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, 1 << 24);
+    return mchr_priv_uint_to_zero_one_excl(result) < probability_of_true;
 }
 
 MCHR_DEF bool mchr_get_2d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed, float probability_of_true ) {
     assert((0.0 <= probability_of_true) && (probability_of_true <= 1.0));
-    return mchr_get_2d_hash_zero_to_one(posX, posY, seed) < probability_of_true;
+    MCHR_INT array[] = { posX, posY };
+    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, 1 << 24);
+    return mchr_priv_uint_to_zero_one_excl(result) < probability_of_true;
 }
 
 MCHR_DEF bool mchr_get_3d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed, float probability_of_true ) {
     assert((0.0 <= probability_of_true) && (probability_of_true <= 1.0));
-    return mchr_get_3d_hash_zero_to_one(posX, posY, posZ, seed) < probability_of_true;
+    MCHR_INT array[] = { posX, posY, posZ };
+    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, 1 << 24);
+    return mchr_priv_uint_to_zero_one_excl(result) < probability_of_true;
 }
 
 MCHR_DEF bool mchr_get_4d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed, float probability_of_true ) {
     assert((0.0 <= probability_of_true) && (probability_of_true <= 1.0));
-    return mchr_get_4d_hash_zero_to_one(posX, posY, posZ, posT, seed) < probability_of_true;
+    MCHR_INT array[] = { posX, posY, posZ, posT };
+    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, 1 << 24);
+    return mchr_priv_uint_to_zero_one_excl(result) < probability_of_true;
 }
 
 // ---------------------------------------------------------------------------------------
 // Float from -1.0 to 1.0 (closed range, including both limits).
+// Derived from the closed [0,1] generator: 2*z - 1 maps [0,1] onto [-1,1] with both
+//  endpoints included. Because z lands on the exact 1/2^24 grid, this arithmetic is exact
+//  (kept in float, no double round-trip), giving equidistant outputs 1/2^23 apart.
 // ---------------------------------------------------------------------------------------
 MCHR_DEF float mchr_get_hash_neg_one_to_one( const void* index_buffer, size_t len, MCHR_UINT seed ) {
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(index_buffer, len, seed, (1 << 25));
-    return mchr_priv_uint_to_neg_one_one(result);
+    return 2.0f * mchr_get_hash_zero_to_one(index_buffer, len, seed) - 1.0f;
 }
 
 MCHR_DEF float mchr_get_1d_hash_neg_one_to_one( MCHR_INT pos, MCHR_UINT seed ) {
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(&pos, sizeof(MCHR_INT), seed, (1 << 25));
-    return mchr_priv_uint_to_neg_one_one(result);
+    return 2.0f * mchr_get_1d_hash_zero_to_one(pos, seed) - 1.0f;
 }
 
 MCHR_DEF float mchr_get_2d_hash_neg_one_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed ) {
-    MCHR_INT array[] = { posX, posY };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 25));
-    return mchr_priv_uint_to_neg_one_one(result);
+    return 2.0f * mchr_get_2d_hash_zero_to_one(posX, posY, seed) - 1.0f;
 }
 
 MCHR_DEF float mchr_get_3d_hash_neg_one_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed ) {
-    MCHR_INT array[] = { posX, posY, posZ };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 25));
-    return mchr_priv_uint_to_neg_one_one(result);
+    return 2.0f * mchr_get_3d_hash_zero_to_one(posX, posY, posZ, seed) - 1.0f;
 }
 
 MCHR_DEF float mchr_get_4d_hash_neg_one_to_one( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed ) {
-    MCHR_INT array[] = { posX, posY, posZ, posT };
-    MCHR_UINT result = mchr_get_hash_uint_under_limit(array, sizeof(array), seed, (1 << 25));
-    return mchr_priv_uint_to_neg_one_one(result);
+    return 2.0f * mchr_get_4d_hash_zero_to_one(posX, posY, posZ, posT, seed) - 1.0f;
 }
 
 #endif // MCHR_IMPLEMENTATION
