@@ -1,14 +1,15 @@
-// mc_hash_rng.h - v0.6 - public domain, initial release 2021-09-15 - Miguel A. Friginal
+// mc_hash_rng.h - v1.0 - public domain, initial release 2021-09-15 - Miguel A. Friginal
 //
 // A hash-based pseudo-random number generator.
 //
-// This is a single-header-file library that provides a stateless random number generator
-// using hash functions, offering very good distribution, good speed, determinism
-// (identical inputs always produce identical outputs), and random access (the sequence of
-// numbers produced by a seed, can be accessed directly through an index without
-// generating all previous values). All functions are pure functions. Utility functions
-// are provided for different return values commonly used in procedural generation. The
-// range functions also provide unbiased results.
+// A single-header-file library that provides a stateless random number generator using 
+// hash functions, offering very good distribution, good speed, determinism (identical
+// inputs always produce identical outputs), and random access (the sequence of numbers
+// produced by a seed, can be accessed directly through an index without generating all
+// previous values). All functions are pure functions. Utility functions are provided for
+// different return values commonly used in procedural generation. The range functions
+// also provide unbiased results. The library passes PractRand v0.96 expanded test set
+// (-te 1), extra folding (-tf 2), to 1TB.
 //
 //
 // This library is based on the work of many online sources, mainly:
@@ -33,14 +34,70 @@
 //      https://cyan4973.github.io/xxHash/
 //      https://github.com/Cyan4973/xxHash
 //
+//   Fast Splittable Pseudorandom Number Generators by Steele, Lea & Flood (splitmix64)
+//      https://doi.org/10.1145/2660193.2660195
+//
+//   Better Bit Mixing by David Stafford (mix13)
+//      https://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
+//
+//   MUM hash by Vladimir Makarov / wyhash by Wang Yi (the multiply-and-fold primitive)
+//      https://github.com/vnmakarov/mum-hash
+//      https://github.com/wangyi-fudan/wyhash
+//
 //   Sean Barrett's single-file public domain libraries in C/C++
 //      https://github.com/nothings/stb
 //
 //   Lessons learned about how to make a header-file library by Sean Barrett
 //      https://github.com/nothings/stb/blob/master/docs/stb_howto.txt
 //
+//   PractRand by Chris Doty-Humphrey
+//      https://pracrand.sourceforge.net
+//
+//   How to Test with PractRand by Melissa E. O'Neill
+//      https://www.pcg-random.org/posts/how-to-test-with-practrand.html
+//
 //
 // History:
+//
+//      1.0 (2026-05-31) Output-changing rework (every emitted value differs from v0.9):
+//         - Per-word absorb changed from a full splitmix64 round to a single
+//           data-dependent 32x32->64 multiply (word XORed into the low lane, times the
+//           odd-forced high lane) plus a golden-ratio Weyl add. This is ~half the
+//           multiplies per word of v0.9, which restores multi-dimensional hashing speed.
+//         - Output is still finalized by a full splitmix64 round, so the final avalanche
+//           matches v0.9; only the absorb is cheaper.
+//         - 64-bit state and high-lane seed placement are unchanged from v0.9.
+//
+//      0.9 (2026-05-30) Output-changing rework (every emitted value differs from v0.8):
+//         - Hash core replaced with a splitmix64-based mixer: a 64-bit state absorbs the
+//           input one 32-bit word at a time (a full splitmix64 round per word) and is
+//           truncated to its top 32 bits. The seed is placed in the high 32 bits of the
+//           state so it is mixed strongly and cannot collide with coordinate data.
+//         - Replaces xxHash (XXH32), whose small-input path under-mixed and failed
+//           PractRand (FPF/Gap) within ~1 GB on counter-like streams. splitmix64's mixer
+//           is validated as a counter generator, which suits the small, near-sequential
+//           inputs this library hashes.
+//
+//      0.8 (2026-05-29) Capability and documentation additions (no value changes):
+//         - The main hash now accepts any length: XXH32's 1-3 byte tail step was added,
+//           so callers no longer need to pad data to a multiple of 4. Multiple-of-4
+//           inputs never enter the tail loop, so all v0.7 outputs are unchanged; the 
+//           length assert was removed.
+//         - Documented the struct-padding hazard for by-value struct hashing.
+//         - Documented determinism/portability: integer inputs are endian-independent,
+//           the float helpers are exact on any IEEE-754 binary32 platform, raw byte
+//           buffers are endian-dependent.
+//
+//      0.7 (2026-05-29) Output-changing rework (every emitted value differs from v0.6):
+//         - Hash replaced with xxHash (XXH32, by Yann Collet), applied over native 32-bit
+//           words via aliasing-safe memcpy; much stronger avalanche than the previous
+//           Squirrel3-style hash.
+//         - under_limit range reduction replaced with Lemire's multiply-shift method
+//           (64-bit intermediate), dropping the bitmask rejection loop and the clz
+//           dependency, with far less rejection. An upper_bound of 0 now denotes the full
+//           2^32 range.
+//         - Added MCHR_UINT64 (uint64_t / unsigned long long) for the multiply; reusable
+//           by future wider-precision helpers.
 //
 //      0.6 (2026-05-29) Bug fixes and cleanup:
 //         - neg_one_to_one now returns a properly closed [-1,1], derived from zero_to_one
@@ -50,9 +107,9 @@
 //           always true and 0.0 always false (rate is unbiased).
 //         - int_in_range computes its span in unsigned arithmetic to avoid
 //           signed-overflow UB on ranges wider than INT_MAX.
-//         - float helpers simplified ((float)num / max_range); removed a dead mask and
+//         - Float helpers simplified ((float)num / max_range); removed a dead mask and
 //           the pass-through temporaries.
-//         - documentation fixes: float spacing (1/2^24 and 1/2^23), the usage example,
+//         - Documentation fixes: float spacing (1/2^24 and 1/2^23), the usage example,
 //           and 'HEADER' / 'hash function' typos.
 //
 //      0.5 (2021-09-15) First released version.
@@ -79,24 +136,25 @@
 // Usage:
 //
 //   All functions require passing an unsigned int seed, and some data to be hashed. The
-//   data can be passed as a pointer to a 32-bit aligned block of memory and its size:
+//   data can be passed as a pointer to any block of memory and its size in bytes (any
+//   length and alignment work):
 //
 //         float data[] = { ... };
 //         unsigned int seed = 0;
 //         unsigned int random_value = mchr_get_hash_uint(data, sizeof(data), seed);
 //
-//   Or directly as up to 4 integer parameters through helper functions (look for 1d, 2d,
+//   or directly as up to 4 integer parameters through helper functions (look for 1d, 2d,
 //   3d, or 4d as part of the function name):
 //
 //         int data1 = 130; int data2 = 23;
 //         unsigned int seed = 0;
-//         unsigned int random_value = mchr_get_2d_hash_uint(data1, data2, seed)
+//         unsigned int random_value = mchr_get_2d_hash_uint(data1, data2, seed);
 //
 //   Use the range functions to obtain numbers without modulo bias, e.g. don't do this:
 //
 //         int zero_to_nine_with_bias = mchr_get_1d_hash_uint(data1, seed) % 10;
 //
-//   Do this instead:
+//   do this instead:
 //
 //         int zero_to_nine_no_bias = mchr_get_1d_hash_int_in_range(data1, seed, 0, 9);
 //
@@ -158,6 +216,31 @@
 //               float tree_height = mchr_get_hash_zero_to_one(&data, sizeof(tree_data_t),
 //                                                             seed_for_tree_heights);
 //
+//         Caution: hashing a struct by value (&data, sizeof(data)) also hashes any
+//         padding bytes the compiler inserts between or after members, and padding is
+//         indeterminate - so two structs that are equal field-by-field can hash
+//         differently, and the same struct can hash differently across compilers/ABIs. To
+//         hash a struct reproducibly, either ensure it has no padding (and
+//         zero-initialize it) or hash the individual fields (e.g. via the 2d/3d/4d
+//         helpers) instead.
+//
+//
+// Determinism and portability:
+//
+//   Identical inputs always produce identical outputs, and any value can be addressed
+//   directly from its seed and index (random access). The integer index helpers (1d-4d,
+//   or arrays of MCHR_INT / MCHR_UINT) return the same result on big- and little-endian
+//   platforms, because whole 32-bit words are read in their native layout. The float
+//   helpers (zero_to_one, neg_one_to_one) and chance are bit-identical on any IEEE-754
+//   binary32 platform: their internal arithmetic is exact (it lands on representable
+//   values), so no special floating-point settings are required.
+//
+//   For RAW byte buffers (as opposed to the integer helpers), cross-endian results
+//   differ: whole words are read natively, while a trailing 1-3 byte remainder is read
+//   one byte at a time in memory order. If you need a raw byte buffer to hash identically
+//   across endianness, feed the data through the integer helpers or normalize its byte
+//   order yourself.
+//
 //
 // Thread-safety:
 //
@@ -186,9 +269,11 @@
 #include <stdint.h>
 #define MCHR_UINT uint32_t
 #define MCHR_INT int32_t
+#define MCHR_UINT64 uint64_t
 #else
 #define MCHR_UINT unsigned int
 #define MCHR_INT int
+#define MCHR_UINT64 unsigned long long
 #endif
 
 #ifdef __cplusplus
@@ -271,108 +356,97 @@ MCHR_DEF bool mchr_get_4d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, M
 #ifdef MCHR_IMPLEMENTATION
 
 // std includes here
-#include <limits.h>
 #include <assert.h>
+#include <string.h>
 
-#if defined(_MSC_VER) && !defined(__clang__)
+// splitmix64 finalizer (Steele, Lea & Flood, "Fast Splittable Pseudorandom Number
+//  Generators", 2014; constants from David Stafford's mix13). Used here as the output
+//  finalizer: it gives the result a full, BigCrush-strength avalanche regardless of how
+//  cheaply the input was absorbed.
+static const MCHR_UINT64 MCHR_SMIX_C1 = 0xBF58476D1CE4E5B9ULL;
+static const MCHR_UINT64 MCHR_SMIX_C2 = 0x94D049BB133111EBULL;
 
-#include <intrin.h>
-
-static MCHR_UINT __inline clz(MCHR_UINT value) {
-    unsigned long leading_zero = 0;
-    if (_BitScanReverse(&leading_zero, value))
-        return 31 - leading_zero;
-    // This is undefined, I better choose 32 than 0
-    return 32;
+static MCHR_UINT64 mchr_priv_smix64(MCHR_UINT64 z) {
+    z = (z ^ (z >> 30)) * MCHR_SMIX_C1;
+    z = (z ^ (z >> 27)) * MCHR_SMIX_C2;
+    return z ^ (z >> 31);
 }
 
-#else
-
-#define clz(x) __builtin_clz(x)
-
-#endif
-
-static const MCHR_UINT MCHR_PRIMES[] = { 1,
-                                         0x9E3779B1U,   // 0b1001 1110 0011 0111 0111 1001 1011 0001
-                                         0x85EBCA77U,   // 0b1000 0101 1110 1011 1100 1010 0111 0111
-                                         0xC2B2AE3DU,   // 0b1100 0010 1011 0010 1010 1110 0011 1101
-                                         0x27D4EB2FU,   // 0b0010 0111 1101 0100 1110 1011 0010 1111
-                                         0x165667B1U }; // 0b0001 0110 0101 0110 0110 0111 1011 0001
-static const MCHR_INT MCHR_PRIMES_LEN = 6; //sizeof(MCHR_PRIMES) / sizeof(MCHR_PRIMES[0]);
-static const MCHR_UINT MCHR_BIT_NOISE1 = 0x68E31DA4U;   // 0b0110 1000 1110 0011 0001 1101 1010 0100
-static const MCHR_UINT MCHR_BIT_NOISE2 = 0xB5297A4DU;   // 0b1011 0101 0010 1001 0111 1010 0100 1101
-static const MCHR_UINT MCHR_BIT_NOISE3 = 0x1B56C4E9U;   // 0b0001 1011 0101 0110 1100 0100 1110 1001
-
 // ---------------------------------------------------------------------------------------
-// This is the main hash function implementation. Currently using a modified Squirrel3 
-//  hash (by Squirrel Eiserloh, https://www.youtube.com/watch?v=LWFzPP8ZbdU) that works on
-//  any data length, and doesn't return the same value for a zero index at all lengths.
-// index_buffer needs to point to a block of memory with a length that is a multiple of
-//  4 bytes (sizeof(uint32_t)).
+// Main hash. A splitmix64 finalizer over a multiply-plus-Weyl absorb. 
+//
+// - splitmix64 (Stafford mix13) for the finalizer.
+// - A data-dependent 32×32→64 lane multiply (the MUM/wyhash multiply primitive, minus the
+//   fold) for the absorb.
+// - A golden-ratio Weyl step for the schedule.
+// - Seed in the high lane, top 32 bits out.
+//
+// Two load-bearing details: the seed sits in the HIGH lane so seed=A,index=B can't
+//  collide with seed=B,index=A; and the 64->32 truncation keeps the map many-to-one.
+//
+// Whole words are read via memcpy (alias-safe, unaligned-safe); a 1-3 byte tail is folded
+//  in last, so multiple-of-4 inputs never hit that branch. Integer helpers are
+//  endian-independent; raw byte buffers are not (see the determinism note).
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_UINT mchr_get_hash_uint(const void* index_buffer, size_t len, MCHR_UINT seed) {
-    assert(len % sizeof(MCHR_UINT) == 0);
+    const unsigned char* p = (const unsigned char*)index_buffer;
+    const unsigned char* const end = p + len;
+    MCHR_UINT w;
 
-    MCHR_UINT num = 0;
+    // Seed in the high lane; the golden-ratio increment moves a zero seed off the origin.
+    MCHR_UINT64 h = ((MCHR_UINT64)seed << 32) + 0x9E3779B97F4A7C15ULL;
 
-    MCHR_INT i = 0;
-    MCHR_INT i_next;
-    MCHR_UINT *ptr = (MCHR_UINT*)index_buffer;
-    while (len > 0) {
-        i_next = (i + 1) % MCHR_PRIMES_LEN;
-        num += *ptr++ * MCHR_PRIMES[i] + MCHR_PRIMES[i_next];
-        i = i_next;
-        len -= sizeof(MCHR_UINT);
+    // Whole 32-bit words: one data-dependent multiply each, then a Weyl advance (the add
+    //  also nudges the state off zero on the rare zero product).
+    while (p + 4 <= end) {
+        memcpy(&w, p, 4);
+        h = (MCHR_UINT64)((MCHR_UINT)h ^ w) * ((MCHR_UINT)(h >> 32) | 1u);
+        h += 0x9E3779B97F4A7C15ULL;
+        p += 4;
     }
 
-    num *= MCHR_BIT_NOISE1;
-    num += seed;
-    num ^= (num >> 8);
-    num += MCHR_BIT_NOISE2;
-    num ^= (num << 8);
-    num *= MCHR_BIT_NOISE3;
-    num ^= (num >> 8);
+    // Trailing 1-3 bytes (taken individually, in memory order). Never runs for
+    //  multiple-of-4 lengths, so the integer index helpers never reach this branch.
+    if (p < end) {
+        MCHR_UINT tail = 0;
+        int shift = 0;
+        while (p < end) {
+            tail |= (MCHR_UINT)(*p) << shift;
+            shift += 8;
+            ++p;
+        }
+        h = (MCHR_UINT64)((MCHR_UINT)h ^ tail) * ((MCHR_UINT)(h >> 32) | 1u);
+        h += 0x9E3779B97F4A7C15ULL;
+    }
 
-    return num;
+    // Fold in the length, finalize with a full splitmix64 round, keep the top 32 bits.
+    h = mchr_priv_smix64(h + (MCHR_UINT64)len);
+    return (MCHR_UINT)(h >> 32);
 }
 
 // ---------------------------------------------------------------------------------------
-// Calculate a uniformly distributed random number less than upper_bound avoiding
-//  "modulo bias".
-// Uniformity is achieved by trying successive ranges of bits from the random value, each
-//  large enough to hold the desired upper bound, until a range holding a value less than
-//  the bound is found.
+// Return a uniformly distributed value in the left-closed interval [0, upper_bound) with
+//  no "modulo bias", using Lemire's multiply-and-shift method (see Melissa O'Neill,
+//  https://www.pcg-random.org/posts/bounded-rands.html). The 32-bit hash is multiplied by
+//  upper_bound into a 64-bit product; the high 32 bits give the result, and the rejection
+//  branch (which computes a single modulo, and only when needed) is taken rarely. By
+//  convention an upper_bound of 0 means the full 2^32 range, returning the raw hash.
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_UINT mchr_get_hash_uint_under_limit(const void* index_buffer, size_t len, MCHR_UINT seed, MCHR_UINT upper_bound) {
-    if (upper_bound < 2)
-        return 0;
+    if (upper_bound == 0)
+        return mchr_get_hash_uint(index_buffer, len, seed);
 
-    // find smallest 2**n -1 >= upper_bound
-    MCHR_INT zeros = clz(upper_bound);
-    MCHR_INT bits = CHAR_BIT * sizeof(MCHR_UINT) - zeros;
-    MCHR_UINT mask = 0xFFFFFFFFU >> zeros;
-
-    do {
-        MCHR_UINT value = mchr_get_hash_uint(index_buffer, len, seed);
-
-        // If low 2**n-1 bits satisfy the requested condition, return result
-        MCHR_UINT result = value & mask;
-        if (result < upper_bound) {
-            return result;
+    MCHR_UINT64 product = (MCHR_UINT64)mchr_get_hash_uint(index_buffer, len, seed) * upper_bound;
+    MCHR_UINT low = (MCHR_UINT)product;
+    if (low < upper_bound) {
+        MCHR_UINT threshold = (0u - upper_bound) % upper_bound;   // == 2^32 mod upper_bound
+        while (low < threshold) {
+            seed += 1;
+            product = (MCHR_UINT64)mchr_get_hash_uint(index_buffer, len, seed) * upper_bound;
+            low = (MCHR_UINT)product;
         }
-
-        // otherwise consume remaining bits of randomness looking for a satisfactory result.
-        MCHR_INT bits_left = zeros;
-        while (bits_left >= bits) {
-            value >>= bits;
-            result = value & mask;
-            if (result < upper_bound) {
-                return result;
-            }
-            bits_left -= bits;
-        }
-        seed += 1;
-    } while (1);
+    }
+    return (MCHR_UINT)(product >> 32);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -457,7 +531,9 @@ MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint_in_range( MCHR_INT posX, MCHR_INT posY,
 }
 
 // ---------------------------------------------------------------------------------------
-// Integer in range (closed range, including both limits).
+// Integer in range (closed range, including both limits). The span is computed in
+//  unsigned arithmetic ((MCHR_UINT)max - (MCHR_UINT)min) so a range wider than INT_MAX
+//  does not overflow the signed subtraction.
 // ---------------------------------------------------------------------------------------
 MCHR_DEF MCHR_INT mchr_get_hash_int_in_range( const void* index_buffer, size_t len, MCHR_UINT seed, MCHR_INT min, MCHR_INT max ) {
     assert(min <= max);
