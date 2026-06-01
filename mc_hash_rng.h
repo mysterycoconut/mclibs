@@ -123,7 +123,8 @@
 //      #include "mc_hash_rng.h"
 //
 //   Optionally, #define MCHR_STATIC before including the header to cause definitions
-//   to be private to the implementation file (i.e. to be "static" instead of "extern"),
+//   to be private to the implementation file (i.e. to be "static" instead of "extern";
+//   -Wall will warn about unused functions in this case, -Wno-unused-function can help),
 //   and #define MCHR_USE_STDINT to have integer parameters and return values be
 //   "uint32_t" and "int32_t" instead of "unsigned int" and "int".
 //
@@ -363,10 +364,10 @@ MCHR_DEF bool mchr_get_4d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, M
 //  Generators", 2014; constants from David Stafford's mix13). Used here as the output
 //  finalizer: it gives the result a full, BigCrush-strength avalanche regardless of how
 //  cheaply the input was absorbed.
-static const MCHR_UINT64 MCHR_SMIX_C1 = 0xBF58476D1CE4E5B9ULL;
-static const MCHR_UINT64 MCHR_SMIX_C2 = 0x94D049BB133111EBULL;
-
 static MCHR_UINT64 mchr_priv_smix64(MCHR_UINT64 z) {
+    const MCHR_UINT64 MCHR_SMIX_C1 = 0xBF58476D1CE4E5B9ULL;
+    const MCHR_UINT64 MCHR_SMIX_C2 = 0x94D049BB133111EBULL;
+
     z = (z ^ (z >> 30)) * MCHR_SMIX_C1;
     z = (z ^ (z >> 27)) * MCHR_SMIX_C2;
     return z ^ (z >> 31);

@@ -1,6 +1,6 @@
 // test_mc_hash_rng.c - unit tests for mc_hash_rng v1.0, using greatest.
 //
-//   build: cc -O2 -std=c11 -Wall -Wextra -I.. test_mc_hash_rng.c -o test_mchr -lm
+//   build: cc -O2 -std=c99 -Wall -Wextra -I.. test_mc_hash_rng.c -o test_mchr -lm
 //   run:   ./test_mchr (add -v for per-test output)
 //
 // This is a white-box test: it #defines MCHR_IMPLEMENTATION so it can also reach the
