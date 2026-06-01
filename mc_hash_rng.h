@@ -2,7 +2,7 @@
 //
 // A hash-based pseudo-random number generator.
 //
-// A single-header-file library that provides a stateless random number generator using 
+// A single-header-file library that provides a stateless random number generator using
 // hash functions, offering very good distribution, good speed, determinism (identical
 // inputs always produce identical outputs), and random access (the sequence of numbers
 // produced by a seed, can be accessed directly through an index without generating all
@@ -29,10 +29,6 @@
 //
 //   Tricks With the Floating-Point Format by Bruce Dawson
 //      https://randomascii.wordpress.com/2012/01/11/tricks-with-the-floating-point-format/
-//
-//   xxHash
-//      https://cyan4973.github.io/xxHash/
-//      https://github.com/Cyan4973/xxHash
 //
 //   Fast Splittable Pseudorandom Number Generators by Steele, Lea & Flood (splitmix64)
 //      https://doi.org/10.1145/2660193.2660195
@@ -81,7 +77,7 @@
 //      0.8 (2026-05-29) Capability and documentation additions (no value changes):
 //         - The main hash now accepts any length: XXH32's 1-3 byte tail step was added,
 //           so callers no longer need to pad data to a multiple of 4. Multiple-of-4
-//           inputs never enter the tail loop, so all v0.7 outputs are unchanged; the 
+//           inputs never enter the tail loop, so all v0.7 outputs are unchanged; the
 //           length assert was removed.
 //         - Documented the struct-padding hazard for by-value struct hashing.
 //         - Documented determinism/portability: integer inputs are endian-independent,
@@ -162,10 +158,10 @@
 //   Notice most range functions use closed ranges (including both minimum and maximum).
 //
 //   Apart from functions returning integer types, there are helper functions that return
-//   floats between 0 and 1 or between -1 and 1 (inclusive, closed ranges). The 
-//   zero-to-one functions return equidistant floats 1.0 / 2^24 apart; the neg-one-to-one 
-//   functions span twice the width, so they return equidistant floats 1.0 / 2^23 apart. 
-//   The even spacing matters since normally there are more representable floats between 
+//   floats between 0 and 1 or between -1 and 1 (inclusive, closed ranges). The
+//   zero-to-one functions return equidistant floats 1.0 / 2^24 apart; the neg-one-to-one
+//   functions span twice the width, so they return equidistant floats 1.0 / 2^23 apart.
+//   The even spacing matters since normally there are more representable floats between
 //   0.0 and 0.5 than between 0.5 and 1.0; these helpers avoid that imbalance.
 //
 //         float zero_to_one = mchr_get_3d_hash_zero_to_one(data1, data2, data3, seed);
@@ -207,13 +203,13 @@
 //                   float position[3];
 //                   enum tree_type type;
 //               } tree_data_t;
-// 
+//
 //               tree_data_t data = {
 //                   .position = {-10.5, -0.16, 32.5},
 //                   .type = K_TREE_TYPE_OAK
 //               };
 //               const unsigned int seed_for_tree_heights = 234234;
-// 
+//
 //               float tree_height = mchr_get_hash_zero_to_one(&data, sizeof(tree_data_t),
 //                                                             seed_for_tree_heights);
 //
@@ -253,7 +249,7 @@
 #define MCHR_INCLUDE_MC_HASH_RNG_H
 
 // std includes here
-#include <stdlib.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 #ifdef MCHR_STATIC
@@ -275,10 +271,6 @@
 #define MCHR_UINT unsigned int
 #define MCHR_INT int
 #define MCHR_UINT64 unsigned long long
-#endif
-
-#ifdef __cplusplus
-extern "C" {
 #endif
 
 // ---------------------------------------------------------------------------------------
@@ -346,13 +338,8 @@ MCHR_DEF bool mchr_get_2d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_UINT seed, 
 MCHR_DEF bool mchr_get_3d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_UINT seed, float probability_of_true );
 MCHR_DEF bool mchr_get_4d_chance( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed, float probability_of_true );
 
-#ifdef __cplusplus
-}
-#endif
-
 // END OF HEADER FILE --------------------------------------------------------------------
 #endif // MCHR_INCLUDE_MC_HASH_RNG_H
-
 
 #ifdef MCHR_IMPLEMENTATION
 
@@ -374,7 +361,7 @@ static MCHR_UINT64 mchr_priv_smix64(MCHR_UINT64 z) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Main hash. A splitmix64 finalizer over a multiply-plus-Weyl absorb. 
+// Main hash. A splitmix64 finalizer over a multiply-plus-Weyl absorb.
 //
 // - splitmix64 (Stafford mix13) for the finalizer.
 // - A data-dependent 32×32→64 lane multiply (the MUM/wyhash multiply primitive, minus the
@@ -467,7 +454,7 @@ static float mchr_priv_uint_to_zero_one(MCHR_UINT num) {
 // Private function to convert an unsigned integer in the range [0, 2^24) into a float in
 //  the left-closed [0,1) range (1.0 excluded). Used by the chance functions, whose
 //  "less than probability" test needs 1.0 to be unreachable so that a probability of 1.0
-//  is always true and a probability of 0.0 is always false (and the true-probability 
+//  is always true and a probability of 0.0 is always false (and the true-probability
 //  stays unbiased).
 // ---------------------------------------------------------------------------------------
 static float mchr_priv_uint_to_zero_one_excl(MCHR_UINT num) {
@@ -493,7 +480,6 @@ MCHR_DEF MCHR_UINT mchr_get_3d_hash_uint( MCHR_INT posX, MCHR_INT posY, MCHR_INT
     MCHR_INT array[] = { posX, posY, posZ };
     return mchr_get_hash_uint(array, sizeof(array), seed);
 }
-
 
 MCHR_DEF MCHR_UINT mchr_get_4d_hash_uint( MCHR_INT posX, MCHR_INT posY, MCHR_INT posZ, MCHR_INT posT, MCHR_UINT seed ) {
     MCHR_INT array[] = { posX, posY, posZ, posT };
